@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ambient Clock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;1,400;1,500&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson@3/dist/topojson.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --fd:'Lora',Georgia,serif; --fu:'Inter',system-ui,sans-serif;
+  --r:18px;--rs:12px;
+  --sh:0 4px 32px rgba(0,0,0,.13);--sh2:0 2px 16px rgba(0,0,0,.10);
+  --gl:rgba(255,255,255,.84);--glh:rgba(255,255,255,.97);
+  --bd:rgba(0,0,0,.10);--bm:rgba(0,0,0,.20);
+  --t1:#080b16;--t2:#18243c;--t3:#374558;--t4:#5c6e82;
+  --btn:rgba(255,255,255,.72);--btna:rgba(255,255,255,.97);
+  --sel:rgba(255,255,255,.68);--chip:rgba(255,255,255,.65);
+}
+body.dark{
+  --gl:rgba(10,16,36,.78);--glh:rgba(12,20,44,.96);
+  --bd:rgba(255,255,255,.08);--bm:rgba(255,255,255,.16);
+  --t1:#edf1ff;--t2:#b8c8e8;--t3:#6878a0;--t4:#3d4d68;
+  --btn:rgba(20,30,60,.68);--btna:rgba(26,40,76,.96);
+  --sel:rgba(14,22,50,.72);--chip:rgba(20,30,60,.64);
+}
+html,body{height:100%}
+body{font-family:var(--fu);min-height:100vh;overflow-x:hidden}
+#sky-bg{position:fixed;inset:0;z-index:0}
+#sky-canvas{width:100%;height:100%;display:block}
+#confetti-canvas{position:fixed;inset:0;z-index:5;pointer-events:none}
+#horn-l,#horn-r{position:fixed;bottom:0;pointer-events:none;z-index:6;font-size:clamp(60px,12vw,110px);opacity:0}
+#horn-l{left:-20px}#horn-r{right:-20px;transform:scaleX(-1)}
+@keyframes horn-in{0%{opacity:0;transform:translateX(0)}30%{opacity:1}70%{opacity:1}100%{opacity:0;transform:translateX(60px)}}
+@keyframes horn-in-r{0%{opacity:0;transform:scaleX(-1) translateX(0)}30%{opacity:1}70%{opacity:1}100%{opacity:0;transform:scaleX(-1) translateX(60px)}}
+#app{position:relative;z-index:2;max-width:940px;margin:0 auto;padding:24px 20px 52px;display:flex;flex-direction:column;gap:16px;min-height:100vh}
+#topbar{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+#brand{font-family:var(--fd);font-size:16px;font-style:italic;color:var(--t2);letter-spacing:.04em;text-shadow:0 1px 8px rgba(0,0,0,.15)}
+#ctrls{display:flex;gap:6px;flex-wrap:wrap}
+.btn{height:32px;padding:0 14px;border-radius:40px;border:1px solid var(--bm);background:var(--btn);color:var(--t2);font-family:var(--fu);font-size:11.5px;font-weight:500;cursor:pointer;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);transition:background .15s,color .15s,transform .1s;white-space:nowrap;box-shadow:var(--sh2)}
+.btn:hover{background:var(--btna);color:var(--t1)}.btn:active{transform:scale(.97)}.btn.on{background:var(--btna);color:var(--t1)}
+#clock-card{background:var(--gl);border:1px solid var(--bd);border-radius:var(--r);backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);box-shadow:var(--sh);padding:38px 36px 28px;text-align:center;position:relative;overflow:hidden}
+#holiday-art{position:absolute;inset:0;pointer-events:none;z-index:1;display:flex;align-items:flex-end;justify-content:space-between;padding:0 20px 16px;font-size:clamp(28px,5vw,42px);line-height:1;opacity:0;transition:opacity .8s}
+#holiday-art.show{opacity:1}
+#clock-inner{position:relative;z-index:2}
+#date-line{font-family:var(--fd);font-size:13.5px;font-style:italic;color:var(--t3);letter-spacing:.14em;margin-bottom:10px;text-shadow:0 1px 6px rgba(0,0,0,.12)}
+#time-row{display:flex;align-items:baseline;justify-content:center;line-height:1}
+#time-hhmm{font-family:var(--fd);font-size:clamp(64px,13.5vw,112px);font-weight:400;letter-spacing:-.02em;color:var(--t1);text-shadow:0 2px 28px rgba(0,0,0,.18)}
+#time-ampm{font-family:var(--fd);font-size:clamp(17px,3vw,28px);color:var(--t3);margin-left:9px;margin-bottom:6px;align-self:flex-end;letter-spacing:.05em}
+#sec-wrap{font-family:var(--fu);font-size:clamp(16px,2.8vw,24px);font-weight:300;color:var(--t4);margin-left:5px;margin-bottom:5px;align-self:flex-end;transition:opacity .25s}
+@keyframes sec-pulse{0%{opacity:.3}18%{opacity:1}100%{opacity:1}}
+#sec-wrap.tick{animation:sec-pulse .35s ease-out}
+#period-lbl{font-family:var(--fd);font-size:13px;font-style:italic;color:var(--t4);margin-top:10px;letter-spacing:.08em}
+#holiday-msg{font-family:var(--fd);font-size:15px;font-style:italic;color:var(--t2);margin-top:8px;opacity:0;transition:opacity .8s;min-height:22px;letter-spacing:.04em}
+#holiday-msg.show{opacity:1}
+#ny-countdown{font-family:var(--fd);font-size:clamp(14px,2.5vw,20px);color:var(--t2);margin-top:8px;letter-spacing:.06em;min-height:26px;opacity:0;transition:opacity .5s}
+#ny-countdown.show{opacity:1}
+
+#weather-line{font-family:var(--fd);font-size:12.5px;font-style:italic;color:var(--t4);margin-top:6px;letter-spacing:.06em;min-height:18px;transition:opacity .6s;display:flex;align-items:center;justify-content:center;gap:6px}
+#weather-line .wicon{font-size:14px;font-style:normal}
+#weather-loc{font-size:10px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--t4);margin-top:3px}
+#sunrise-line{font-size:10.5px;font-style:italic;color:var(--t4);margin-top:3px;letter-spacing:.05em;opacity:.85}
+/* Fullscreen */
+body.fullscreen #app>*:not(#clock-card){display:none!important}
+body.fullscreen #app{justify-content:center;align-items:center;padding:0}
+body.fullscreen #clock-card{border-radius:0;max-width:100vw;width:100vw;box-shadow:none;border:none;padding:60px 40px}
+body.fullscreen #btn-fs{background:var(--btna);color:var(--t1)}
+/* Rain canvas */
+#wx-canvas{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:0;transition:opacity 1.2s}
+#wx-canvas.show{opacity:1}
+/* Snow canvas */
+#snow-canvas{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:0;transition:opacity 1.2s}
+#snow-canvas.show{opacity:1}
+/* Lightning */
+#lightning{position:fixed;inset:0;z-index:1;pointer-events:none;background:rgba(200,220,255,0);transition:background .05s}
+#lightning.flash{background:rgba(200,220,255,0.18)}
+/* Fog */
+#fog-overlay{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:0;transition:opacity 2s;background:radial-gradient(ellipse at 50% 30%,rgba(200,210,220,.22) 0%,rgba(180,195,210,.12) 60%,transparent 100%)}
+#fog-overlay.show{opacity:1}
+/* Weather location input */
+#wx-input-wrap{display:none;position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:6px;z-index:10;background:var(--glh);border:1px solid var(--bm);border-radius:10px;padding:8px 10px;box-shadow:var(--sh);display:none;align-items:center;gap:6px;white-space:nowrap}
+#wx-input-wrap.open{display:flex}
+#wx-city-input{height:26px;background:var(--sel);border:1px solid var(--bd);border-radius:6px;color:var(--t1);font-family:var(--fu);font-size:12px;padding:0 8px;outline:none;width:140px}
+#wx-city-btn{height:26px;padding:0 10px;border-radius:6px;border:1px solid var(--bm);background:var(--chip);color:var(--t2);font-family:var(--fu);font-size:11px;cursor:pointer}
+#wx-city-btn:hover{background:var(--btna)}
+#tz-wrap{display:flex;flex-direction:column;gap:10px}
+#tz-bar{display:flex;justify-content:space-between;align-items:center}
+#tz-lbl{font-size:10px;font-weight:500;letter-spacing:.18em;text-transform:uppercase;color:var(--t4)}
+#add-btn{height:28px;padding:0 13px;border-radius:40px;border:1px dashed var(--bm);background:transparent;color:var(--t3);font-family:var(--fu);font-size:11px;font-weight:500;cursor:pointer;transition:background .15s,color .15s}
+#add-btn:hover:not(:disabled){background:var(--chip);color:var(--t1)}#add-btn:disabled{opacity:.25;cursor:default}
+#tz-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+@media(max-width:520px){#tz-grid{grid-template-columns:1fr}}
+.tz-card{background:var(--gl);border:1px solid var(--bd);border-radius:var(--rs);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);box-shadow:var(--sh2);padding:13px 15px 11px;transition:outline .2s}
+.tzc-head{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.tzc-sw{flex:1;min-width:0;position:relative}
+.tzc-sw label{display:block;font-size:9px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:var(--t4);margin-bottom:3px}
+.tzc-sel{width:100%;background:var(--sel);border:1px solid var(--bd);border-radius:8px;color:var(--t1);font-family:var(--fu);font-size:11.5px;padding:5px 24px 5px 9px;cursor:pointer;outline:none;appearance:none;-webkit-appearance:none;overflow:hidden;text-overflow:ellipsis;transition:border-color .15s,background .15s}
+.tzc-sel:hover,.tzc-sel:focus{border-color:var(--bm);background:var(--glh)}
+.tzc-sel option{background:#1a2540;color:#ddeaff}
+.tzc-arr{position:absolute;right:9px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--t4);font-size:9px}
+.tzc-rm{width:25px;height:25px;border-radius:50%;border:1px solid var(--bd);background:transparent;color:var(--t4);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,color .15s;flex-shrink:0}
+.tzc-rm:hover{background:rgba(200,50,50,.12);color:#c03838;border-color:rgba(200,50,50,.25)}
+.tzc-trow{display:flex;align-items:baseline;gap:0;margin-bottom:4px}
+.tzc-time{font-family:var(--fd);font-size:clamp(25px,4.8vw,40px);font-weight:400;color:var(--t1);letter-spacing:-.01em;line-height:1}
+.tzc-ampm{font-family:var(--fd);font-size:13px;color:var(--t3);margin-left:5px;margin-bottom:1px;align-self:flex-end}
+.tzc-sec{font-family:var(--fu);font-size:11px;color:var(--t4);margin-left:3px;margin-bottom:1px;align-self:flex-end;transition:opacity .25s}
+.tzc-foot{display:flex;justify-content:space-between;align-items:center;margin-top:4px}
+.tzc-utc{display:inline-block;background:var(--chip);border:1px solid var(--bd);border-radius:5px;padding:2px 7px;font-size:9.5px;font-weight:500;color:var(--t3);letter-spacing:.05em}
+.tzc-diff{font-family:var(--fd);font-style:italic;font-size:11px;color:var(--t3)}
+#map-section{background:var(--gl);border:1px solid var(--bd);border-radius:var(--r);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:var(--sh);overflow:hidden}
+#map-head{padding:12px 18px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--bd)}
+#map-hl{font-size:10px;font-weight:500;letter-spacing:.18em;text-transform:uppercase;color:var(--t4)}
+#map-hh{font-family:var(--fd);font-style:italic;font-size:12px;color:var(--t4)}
+#map-wrap{position:relative;width:100%;padding-bottom:51%;overflow:hidden}
+#map-inner{position:absolute;inset:0;width:100%;height:100%}
+#map-svg{width:100%;height:100%;display:block}
+#mtt{position:absolute;background:var(--glh);border:1px solid var(--bm);border-radius:10px;padding:9px 13px 8px;pointer-events:none;opacity:0;white-space:nowrap;z-index:20;backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);box-shadow:0 4px 24px rgba(0,0,0,.15);transition:opacity .12s,transform .12s;transform:translateY(-4px)}
+#mtt.show{opacity:1;transform:translateY(0)}
+#mtt .tc{font-weight:600;font-size:11.5px;color:var(--t1);margin-bottom:2px}
+#mtt .tt{font-family:var(--fd);font-size:16px;color:var(--t1)}
+#mtt .tu{font-size:9.5px;color:var(--t3);margin-top:2px}
+#mtt .th{font-size:9.5px;color:var(--t4);font-style:italic;margin-top:1px}
+#hist-bar{background:var(--gl);border:1px solid var(--bd);border-radius:var(--rs);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);box-shadow:var(--sh2);padding:14px 18px;display:flex;align-items:center;gap:12px;min-height:58px;cursor:pointer;transition:background .15s;user-select:none}
+#hist-bar:hover{background:var(--glh)}
+#hist-icon{font-size:18px;flex-shrink:0;opacity:.75}
+#hist-body{flex:1;min-width:0}
+#hist-year{font-size:9.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--t4);margin-bottom:3px}
+#hist-text{font-family:var(--fd);font-size:13px;font-style:italic;color:var(--t2);line-height:1.5;transition:opacity .35s}
+#hist-text.fade{opacity:0}
+#hist-nav{display:flex;gap:4px;flex-shrink:0}
+.hnb{width:26px;height:26px;border-radius:50%;border:1px solid var(--bd);background:transparent;color:var(--t4);font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,color .15s}
+.hnb:hover{background:var(--chip);color:var(--t1)}
+#hist-dots{display:flex;gap:4px;align-items:center;flex-shrink:0}
+.hdot{width:5px;height:5px;border-radius:50%;background:var(--t4);opacity:.3;transition:opacity .3s,background .3s}
+.hdot.on{opacity:1;background:var(--t2)}
+/* DEV PANEL */
+#dev-panel{position:fixed;top:80px;right:32px;z-index:200;width:310px;background:rgba(10,14,28,.97);border:1px solid rgba(255,255,255,.12);border-radius:14px;box-shadow:0 8px 48px rgba(0,0,0,.55);font-family:var(--fu);font-size:12px;color:#c8d8f0;display:none;overflow:hidden;user-select:none}
+#dev-panel.open{display:block;animation:devpop .22s ease-out}
+@keyframes devpop{from{opacity:0;transform:scale(.94) translateY(-8px)}to{opacity:1;transform:scale(1) translateY(0)}}
+#dev-drag{padding:11px 14px 10px;background:rgba(255,255,255,.05);border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;align-items:center;cursor:grab}
+#dev-drag:active{cursor:grabbing}
+#dev-title{font-size:11px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:#6090c0}
+#dev-sub{font-size:9px;color:#304060;letter-spacing:.06em;margin-top:2px}
+#dev-close{width:20px;height:20px;border-radius:50%;border:1px solid rgba(255,255,255,.12);background:transparent;color:#506080;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,color .15s;line-height:1}
+#dev-close:hover{background:rgba(200,50,50,.2);color:#e05050}
+#dev-body{padding:14px;display:flex;flex-direction:column;gap:14px;max-height:78vh;overflow-y:auto}
+#dev-body::-webkit-scrollbar{width:4px}#dev-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:4px}
+.ds{display:flex;flex-direction:column;gap:8px}
+.dst{font-size:9px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:#304060;padding-bottom:4px;border-bottom:1px solid rgba(255,255,255,.06)}
+.dr{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.dl{font-size:11px;color:#6090b8;flex-shrink:0;min-width:68px}
+.dv{font-size:11px;color:#90b8d8;min-width:36px;text-align:right;flex-shrink:0}
+.di{flex:1;height:22px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:5px;color:#c8d8f0;font-family:var(--fu);font-size:11px;padding:0 7px;outline:none;transition:border-color .15s}
+.di:focus{border-color:rgba(80,140,220,.5)}
+.di[type=range]{padding:0;background:transparent;border:none;cursor:pointer;accent-color:#4080d0}
+.di[type=date],.di[type=time]{padding:0 6px;color-scheme:dark}
+.dsel{flex:1;height:26px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:5px;color:#c8d8f0;font-family:var(--fu);font-size:11px;padding:0 6px;outline:none;cursor:pointer;appearance:none;-webkit-appearance:none}
+.dsel option{background:#0e1628;color:#c8d8f0}
+.dbtn{height:26px;padding:0 11px;border-radius:6px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.06);color:#90b8e0;font-family:var(--fu);font-size:11px;font-weight:500;cursor:pointer;transition:background .15s,color .15s,transform .1s;white-space:nowrap}
+.dbtn:hover{background:rgba(60,120,220,.25);color:#b8d8ff;border-color:rgba(60,120,220,.35)}.dbtn:active{transform:scale(.96)}
+.dbtn.red:hover{background:rgba(200,50,50,.2);color:#ff9090;border-color:rgba(200,50,50,.4)}
+.dtog{display:flex;align-items:center;gap:6px;cursor:pointer}
+.dtog input[type=checkbox]{accent-color:#4080d0;width:13px;height:13px;cursor:pointer}
+.dtog span{font-size:11px;color:#6090b8}
+#dev-sim-on{font-size:10px;color:#e08040;display:none}
+#dev-sim-on.on{display:block}
+@media(max-width:600px){#app{padding:14px 12px 36px;gap:12px}#clock-card{padding:22px 14px 18px}#map-wrap{padding-bottom:64%}}
+</style>
+</head>
+<body>
+<div id="sky-bg"><canvas id="sky-canvas"></canvas></div>
+<canvas id="confetti-canvas"></canvas>
+<canvas id="wx-canvas"></canvas>
+<canvas id="snow-canvas"></canvas>
+<div id="lightning"></div>
+<div id="fog-overlay"></div>
+<div id="horn-l">📯</div><div id="horn-r">📯</div>
+<div id="app">
+  <div id="topbar">
+    <div id="brand">ambient clock</div>
+    <div id="ctrls">
+      <button class="btn on" id="btn-sec">sec</button>
+      <button class="btn" id="btn-12h">12h</button>
+      <button class="btn" id="btn-dark">dark mode</button>
+      <button class="btn" id="btn-fs">⛶ fullscreen</button>
+      <button class="btn" id="btn-wx">📍 weather</button>
+    </div>
+  </div>
+  <div id="clock-card">
+    <div id="holiday-art"><span id="ha-left"></span><span id="ha-right"></span></div>
+    <div id="clock-inner">
+      <div id="date-line">—</div>
+      <div id="time-row">
+        <span id="time-hhmm">--:--</span>
+        <span id="sec-wrap">:--</span>
+        <span id="time-ampm" style="display:none">AM</span>
+      </div>
+      <div id="period-lbl">—</div>
+      <div id="holiday-msg"></div>
+      <div id="ny-countdown"></div>
+      <div id="weather-line"><span class="wicon"></span><span id="wx-temp"></span><span id="wx-unit" title="click to change unit" style="cursor:pointer;text-decoration:underline;text-underline-offset:3px;text-decoration-style:dotted;opacity:.7"></span><span id="wx-cond"></span></div>
+      <div id="weather-loc"></div>
+      <div id="sunrise-line"></div>
+      <div id="wx-input-wrap"><input id="wx-city-input" placeholder="city name…" /><button id="wx-city-btn">go</button></div>
+    </div>
+  </div>
+  <div id="tz-wrap">
+    <div id="tz-bar"><span id="tz-lbl">compare timezones</span><button id="add-btn">+ add timezone</button></div>
+    <div id="tz-grid"></div>
+  </div>
+  <div id="map-section">
+    <div id="map-head"><span id="map-hl">world map</span><span id="map-hh">click a city to add timezone</span></div>
+    <div id="map-wrap"><div id="map-inner">
+      <svg id="map-svg" viewBox="0 0 960 500" preserveAspectRatio="xMidYMid meet">
+        <defs><clipPath id="mc"><rect width="960" height="500"/></clipPath></defs>
+        <rect id="ocean" width="960" height="500" fill="#6da8c8" opacity="0.52"/>
+        <g id="land-g" clip-path="url(#mc)"></g>
+        <g id="grat-g" clip-path="url(#mc)" stroke="rgba(255,255,255,0.055)" stroke-width="0.5" fill="none"></g>
+        <g id="city-g" clip-path="url(#mc)"></g>
+      </svg>
+      <div id="mtt"><div class="tc">—</div><div class="tt">--:--</div><div class="tu">—</div><div class="th">click to add</div></div>
+    </div></div>
+  </div>
+  <div id="hist-bar">
+    <div id="hist-icon">📜</div>
+    <div id="hist-body"><div id="hist-year">this day in history</div><div id="hist-text">Loading…</div></div>
+    <div id="hist-dots"></div>
+    <div id="hist-nav"><button class="hnb" id="hprev">‹</button><button class="hnb" id="hnext">›</button></div>
+  </div>
+</div>
+<!-- DEV PANEL -->
+<div id="dev-panel">
+  <div id="dev-drag">
+    <div><div id="dev-title">⚙ Dev Panel</div><div id="dev-sub">↑↑↓↓←→←→BA to toggle</div></div>
+    <button id="dev-close">×</button>
+  </div>
+  <div id="dev-body">
+    <div class="ds">
+      <div class="dst">time simulator</div>
+      <div class="dr"><span class="dl">date</span><input type="date" class="di" id="dev-date" style="flex:1"></div>
+      <div class="dr"><span class="dl">time</span><input type="time" class="di" id="dev-time" style="flex:1"></div>
+      <div class="dr"><span class="dl">hour scrub</span><input type="range" class="di" id="dev-hscrub" min="0" max="23" step="1" style="flex:1"><span class="dv" id="dev-hval">--</span></div>
+      <div class="dr" style="gap:6px"><button class="dbtn" id="dev-apply" style="flex:1">apply</button><button class="dbtn red" id="dev-reset" style="flex:1">reset to now</button></div>
+      <span id="dev-sim-on">⏱ simulating time</span>
+    </div>
+    <div class="ds">
+      <div class="dst">sky period</div>
+      <div class="dr"><span class="dl">hour</span><input type="range" class="di" id="dev-sky" min="0" max="23.99" step="0.25" style="flex:1"><span class="dv" id="dev-skyval">--</span></div>
+      <div class="dr"><span class="dl" id="dev-skyperiod" style="color:#90b8e0;min-width:auto;flex:1">—</span><button class="dbtn" id="dev-skyunlock">unlock</button></div>
+    </div>
+    <div class="ds">
+      <div class="dst">holiday override</div>
+      <div class="dr"><span class="dl">force</span>
+        <select class="dsel" id="dev-holsel">
+          <option value="">— none (real date) —</option>
+          <option value="christmas">🎄 Christmas</option>
+          <option value="halloween">🎃 Halloween</option>
+          <option value="valentines">❤️ Valentine's Day</option>
+          <option value="stpatricks">☘️ St. Patrick's Day</option>
+          <option value="july4">🇺🇸 4th of July</option>
+          <option value="easter">🐣 Easter</option>
+          <option value="thanksgiving">🦃 Thanksgiving</option>
+          <option value="diwali">🪔 Diwali</option>
+          <option value="hanukkah">🕎 Hanukkah</option>
+          <option value="nye">✨ New Year's Eve</option>
+          <option value="newyear">🎉 New Year's Day</option>
+          <option value="bonfire">🎆 Bonfire Night</option>
+        </select>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:2px" id="dev-cfbtns"></div>
+    </div>
+    <div class="ds">
+      <div class="dst">confetti</div>
+      <div class="dr"><span class="dl">count</span><input type="range" class="di" id="dev-cfcount" min="20" max="400" step="10" value="400" style="flex:1"><span class="dv" id="dev-cfcval">400</span></div>
+      <div class="dr"><span class="dl">speed</span><input type="range" class="di" id="dev-cfspeed" min="0.3" max="3" step="0.1" value="1" style="flex:1"><span class="dv" id="dev-cfsval">1.0×</span></div>
+      <div class="dr"><span class="dl">spread</span><input type="range" class="di" id="dev-cfspread" min="0.3" max="3" step="0.1" value="1" style="flex:1"><span class="dv" id="dev-cfspval">1.0×</span></div>
+      <div class="dr"><button class="dbtn red" id="dev-cfclear" style="flex:1">clear all particles</button></div>
+    </div>
+    <div class="ds">
+      <div class="dst">map</div>
+      <label class="dtog"><input type="checkbox" id="dev-grid" checked><span>graticule grid</span></label>
+      <label class="dtog"><input type="checkbox" id="dev-cities" checked><span>city labels</span></label>
+    </div>
+    <div class="ds">
+      <div class="dst">layout</div>
+      <label class="dtog"><input type="checkbox" id="dev-histshow" checked><span>history bar</span></label>
+    </div>
+    <div style="margin-top:4px;padding-top:10px;border-top:1px solid rgba(255,255,255,.06);text-align:center">
+      <span style="font-size:10px;color:#2a3d58;font-family:var(--fd);font-style:italic;letter-spacing:.06em">made by kelby&nbsp;(;</span>
+    </div>
+  </div>
+</div>
+<script>
+// ══ TIMEZONE DATA ═══════════════════════════════════════════════════════════
+const TZ_DATA=[
+  {tz:'Pacific/Midway',label:'Midway Island',city:'MID',utc:-11,lon:-177,lat:28},
+  {tz:'Pacific/Honolulu',label:'Honolulu',city:'HNL',utc:-10,lon:-158,lat:21},
+  {tz:'Pacific/Tahiti',label:'Tahiti',city:'PPT',utc:-10,lon:-149,lat:-18},
+  {tz:'America/Anchorage',label:'Anchorage',city:'ANC',utc:-9,lon:-150,lat:61},
+  {tz:'America/Vancouver',label:'Vancouver',city:'YVR',utc:-8,lon:-123,lat:49},
+  {tz:'America/Los_Angeles',label:'Los Angeles',city:'LAX',utc:-8,lon:-118,lat:34},
+  {tz:'America/Phoenix',label:'Phoenix',city:'PHX',utc:-7,lon:-112,lat:33},
+  {tz:'America/Denver',label:'Denver',city:'DEN',utc:-7,lon:-105,lat:40},
+  {tz:'America/Chicago',label:'Chicago',city:'CHI',utc:-6,lon:-88,lat:42},
+  {tz:'America/Mexico_City',label:'Mexico City',city:'MEX',utc:-6,lon:-99,lat:19},
+  {tz:'America/New_York',label:'New York',city:'NYC',utc:-5,lon:-74,lat:41},
+  {tz:'America/Toronto',label:'Toronto',city:'YYZ',utc:-5,lon:-79,lat:44},
+  {tz:'America/Bogota',label:'Bogotá',city:'BOG',utc:-5,lon:-74,lat:5},
+  {tz:'America/Lima',label:'Lima',city:'LIM',utc:-5,lon:-77,lat:-12},
+  {tz:'America/Halifax',label:'Halifax',city:'HAL',utc:-4,lon:-64,lat:45},
+  {tz:'America/Caracas',label:'Caracas',city:'CCS',utc:-4,lon:-67,lat:10},
+  {tz:'America/Santiago',label:'Santiago',city:'SCL',utc:-4,lon:-71,lat:-33},
+  {tz:'America/Sao_Paulo',label:'São Paulo',city:'GRU',utc:-3,lon:-46,lat:-24},
+  {tz:'America/Buenos_Aires',label:'Buenos Aires',city:'EZE',utc:-3,lon:-58,lat:-34},
+  {tz:'Atlantic/Azores',label:'Azores',city:'AZO',utc:-1,lon:-25,lat:38},
+  {tz:'Atlantic/Reykjavik',label:'Reykjavik',city:'REK',utc:0,lon:-22,lat:64},
+  {tz:'Africa/Casablanca',label:'Casablanca',city:'CMN',utc:0,lon:-8,lat:34},
+  {tz:'Europe/London',label:'London',city:'LON',utc:0,lon:-.1,lat:51},
+  {tz:'Europe/Lisbon',label:'Lisbon',city:'LIS',utc:0,lon:-9,lat:39},
+  {tz:'Europe/Paris',label:'Paris',city:'PAR',utc:1,lon:2,lat:49},
+  {tz:'Europe/Berlin',label:'Berlin',city:'BER',utc:1,lon:13,lat:52},
+  {tz:'Europe/Madrid',label:'Madrid',city:'MAD',utc:1,lon:-4,lat:40},
+  {tz:'Europe/Rome',label:'Rome',city:'FCO',utc:1,lon:12,lat:42},
+  {tz:'Europe/Stockholm',label:'Stockholm',city:'ARN',utc:1,lon:18,lat:59},
+  {tz:'Africa/Lagos',label:'Lagos',city:'LOS',utc:1,lon:3,lat:6},
+  {tz:'Europe/Athens',label:'Athens',city:'ATH',utc:2,lon:24,lat:38},
+  {tz:'Europe/Helsinki',label:'Helsinki',city:'HEL',utc:2,lon:25,lat:60},
+  {tz:'Africa/Cairo',label:'Cairo',city:'CAI',utc:2,lon:31,lat:30},
+  {tz:'Africa/Johannesburg',label:'Johannesburg',city:'JNB',utc:2,lon:28,lat:-26},
+  {tz:'Asia/Beirut',label:'Beirut',city:'BEY',utc:2,lon:35,lat:34},
+  {tz:'Europe/Moscow',label:'Moscow',city:'MOW',utc:3,lon:37,lat:56},
+  {tz:'Asia/Riyadh',label:'Riyadh',city:'RUH',utc:3,lon:47,lat:25},
+  {tz:'Africa/Nairobi',label:'Nairobi',city:'NBO',utc:3,lon:37,lat:-1},
+  {tz:'Asia/Tehran',label:'Tehran',city:'IKA',utc:3.5,lon:51,lat:36},
+  {tz:'Asia/Dubai',label:'Dubai',city:'DXB',utc:4,lon:55,lat:25},
+  {tz:'Asia/Kabul',label:'Kabul',city:'KBL',utc:4.5,lon:69,lat:34},
+  {tz:'Asia/Karachi',label:'Karachi',city:'KHI',utc:5,lon:67,lat:25},
+  {tz:'Asia/Tashkent',label:'Tashkent',city:'TAS',utc:5,lon:69,lat:41},
+  {tz:'Asia/Kolkata',label:'Mumbai / Kolkata',city:'BOM',utc:5.5,lon:72,lat:19},
+  {tz:'Asia/Colombo',label:'Colombo',city:'CMB',utc:5.5,lon:80,lat:7},
+  {tz:'Asia/Kathmandu',label:'Kathmandu',city:'KTM',utc:5.75,lon:85,lat:28},
+  {tz:'Asia/Dhaka',label:'Dhaka',city:'DAC',utc:6,lon:90,lat:24},
+  {tz:'Asia/Almaty',label:'Almaty',city:'ALA',utc:6,lon:77,lat:43},
+  {tz:'Asia/Rangoon',label:'Yangon',city:'RGN',utc:6.5,lon:96,lat:17},
+  {tz:'Asia/Bangkok',label:'Bangkok',city:'BKK',utc:7,lon:101,lat:14},
+  {tz:'Asia/Jakarta',label:'Jakarta',city:'CGK',utc:7,lon:107,lat:-6},
+  {tz:'Asia/Ho_Chi_Minh',label:'Ho Chi Minh',city:'SGN',utc:7,lon:107,lat:11},
+  {tz:'Asia/Shanghai',label:'Beijing / Shanghai',city:'PEK',utc:8,lon:116,lat:40},
+  {tz:'Asia/Singapore',label:'Singapore',city:'SIN',utc:8,lon:104,lat:1},
+  {tz:'Asia/Manila',label:'Manila',city:'MNL',utc:8,lon:121,lat:15},
+  {tz:'Asia/Taipei',label:'Taipei',city:'TPE',utc:8,lon:121,lat:25},
+  {tz:'Asia/Ulaanbaatar',label:'Ulaanbaatar',city:'ULN',utc:8,lon:107,lat:48},
+  {tz:'Asia/Seoul',label:'Seoul',city:'ICN',utc:9,lon:127,lat:37},
+  {tz:'Asia/Tokyo',label:'Tokyo',city:'TYO',utc:9,lon:140,lat:36},
+  {tz:'Australia/Adelaide',label:'Adelaide',city:'ADL',utc:9.5,lon:139,lat:-35},
+  {tz:'Australia/Sydney',label:'Sydney',city:'SYD',utc:10,lon:151,lat:-34},
+  {tz:'Asia/Vladivostok',label:'Vladivostok',city:'VVO',utc:10,lon:132,lat:43},
+  {tz:'Pacific/Guam',label:'Guam',city:'GUM',utc:10,lon:145,lat:13},
+  {tz:'Australia/Brisbane',label:'Brisbane',city:'BNE',utc:10,lon:153,lat:-27},
+  {tz:'Pacific/Auckland',label:'Auckland',city:'AKL',utc:12,lon:175,lat:-37},
+  {tz:'Pacific/Fiji',label:'Fiji',city:'NAN',utc:12,lon:178,lat:-18},
+];
+
+// ══ HISTORY DATA ════════════════════════════════════════════════════════════
+const HISTORY={
+  "1-1":[{y:45,t:"Julius Caesar introduced the Julian calendar, replacing older Roman systems."},{y:1863,t:"Abraham Lincoln signed the Emancipation Proclamation, declaring enslaved people free."},{y:1999,t:"The Euro was introduced as the common currency across eleven European nations."},{y:1804,t:"Haiti proclaimed independence — the first Black-led republic in the world."}],
+  "1-7":[{y:1610,t:"Galileo discovered three of Jupiter's moons: Io, Europa, and Ganymede."},{y:1785,t:"The first air crossing of the English Channel was made by balloon."},{y:1927,t:"Commercial transatlantic telephone service between New York and London began."}],
+  "1-9":[{y:1793,t:"The first balloon flight in the United States took place over Philadelphia."},{y:2007,t:"Steve Jobs unveiled the first iPhone at Macworld Conference in San Francisco."}],
+  "1-10":[{y:1863,t:"The London Underground — the world's first metro system — opened to passengers."},{y:1946,t:"The United Nations General Assembly held its very first session in London."}],
+  "1-15":[{y:1559,t:"Elizabeth I was crowned Queen of England at Westminster Abbey."},{y:1929,t:"Martin Luther King Jr. was born in Atlanta, Georgia."},{y:2009,t:"Captain Sullenberger safely landed a stricken plane on the Hudson River."}],
+  "1-17":[{y:1706,t:"Benjamin Franklin, statesman and inventor, was born in Boston, Massachusetts."},{y:1961,t:"President Eisenhower warned of the military-industrial complex in his farewell address."}],
+  "1-20":[{y:1961,t:"John F. Kennedy was inaugurated as the 35th President of the United States."},{y:2021,t:"Joe Biden was inaugurated as the 46th President of the United States."}],
+  "2-3":[{y:1468,t:"Johannes Gutenberg, inventor of the printing press, died in Mainz, Germany."},{y:1959,t:"Buddy Holly, Ritchie Valens and The Big Bopper died in a plane crash — 'The Day the Music Died'."}],
+  "2-12":[{y:1809,t:"Charles Darwin and Abraham Lincoln were both born on exactly the same day."},{y:1912,t:"China's last emperor, Puyi, abdicated — ending over 2,000 years of imperial rule."}],
+  "2-14":[{y:1876,t:"Alexander Graham Bell and Elisha Gray both applied for telephone patents on the same morning."},{y:1946,t:"ENIAC, the world's first general-purpose electronic computer, was unveiled in Philadelphia."},{y:1990,t:"Voyager 1 captured the famous 'Pale Blue Dot' photograph of Earth from 6 billion km away."}],
+  "3-14":[{y:1879,t:"Albert Einstein was born in Ulm, Germany — one of history's greatest physicists."},{y:1883,t:"Karl Marx, author of The Communist Manifesto, died in London."}],
+  "3-17":[{y:461,t:"St. Patrick, patron saint of Ireland, died — now celebrated worldwide every year."},{y:1762,t:"New York City held its first St. Patrick's Day parade on this day."}],
+  "4-1":[{y:1976,t:"Apple Computer Company was founded by Steve Jobs, Steve Wozniak, and Ronald Wayne."},{y:2001,t:"The Netherlands became the first country in the world to legalize same-sex marriage."}],
+  "4-15":[{y:1452,t:"Leonardo da Vinci was born in Vinci, Republic of Florence."},{y:1912,t:"The Titanic sank in the North Atlantic, killing over 1,500 people."}],
+  "4-23":[{y:1564,t:"William Shakespeare was born in Stratford-upon-Avon — and died on the same date 52 years later."},{y:2005,t:"The first video was uploaded to YouTube, titled 'Me at the Zoo'."}],
+  "5-10":[{y:1869,t:"The golden spike was driven at Promontory, Utah, completing the first transcontinental railroad."},{y:1994,t:"Nelson Mandela was inaugurated as South Africa's first Black president."}],
+  "5-29":[{y:1453,t:"The Byzantine Empire fell as Ottoman forces captured Constantinople after a 53-day siege."},{y:1953,t:"Edmund Hillary and Tenzing Norgay became the first people to summit Mount Everest."}],
+  "6-6":[{y:1944,t:"D-Day — Allied forces launched the largest seaborne invasion in history on the beaches of Normandy."},{y:1984,t:"The first version of Tetris was released by Alexey Pajitnov in the Soviet Union."}],
+  "7-4":[{y:1776,t:"The United States Declaration of Independence was adopted by the Continental Congress."},{y:1826,t:"Both John Adams and Thomas Jefferson died on the 50th anniversary of Independence Day."},{y:1997,t:"NASA's Mars Pathfinder spacecraft successfully landed on the surface of Mars."}],
+  "7-20":[{y:1969,t:"Neil Armstrong and Buzz Aldrin became the first humans to walk on the Moon."},{y:1976,t:"NASA's Viking 1 became the first spacecraft to successfully land on Mars."}],
+  "8-6":[{y:1945,t:"The United States dropped an atomic bomb on Hiroshima, Japan, killing tens of thousands instantly."},{y:1991,t:"Tim Berners-Lee made the World Wide Web publicly available for the first time."}],
+  "8-28":[{y:1833,t:"Slavery was abolished throughout the British Empire by the Slavery Abolition Act."},{y:1963,t:"Martin Luther King Jr. delivered his 'I Have a Dream' speech in Washington D.C."}],
+  "9-11":[{y:1609,t:"Henry Hudson sailed into what is now New York Harbor, claiming the land for the Dutch."},{y:2001,t:"Terrorist attacks destroyed the World Trade Center and damaged the Pentagon, killing nearly 3,000 people."}],
+  "10-3":[{y:1990,t:"East and West Germany were officially reunified after more than four decades of division."}],
+  "10-12":[{y:1492,t:"Christopher Columbus made his first landfall in the Americas, reaching the Bahamas."},{y:1999,t:"The world's population officially reached 6 billion people."}],
+  "10-31":[{y:1517,t:"Martin Luther nailed his 95 Theses to the door of Wittenberg Cathedral, sparking the Reformation."},{y:1926,t:"Harry Houdini, legendary escape artist and magician, died on Halloween night."}],
+  "11-5":[{y:1605,t:"Guy Fawkes and conspirators attempted to blow up the Houses of Parliament — the Gunpowder Plot."},{y:1955,t:"The first microwave oven for home use went on sale in the United States for $1,295."}],
+  "11-9":[{y:1989,t:"The Berlin Wall fell, reuniting East and West Berlin after nearly three decades of division."},{y:1938,t:"Kristallnacht — Nazi forces attacked Jewish homes, businesses, and synagogues across Germany."}],
+  "11-22":[{y:1963,t:"President John F. Kennedy was assassinated in Dallas, Texas."},{y:1977,t:"Concorde began its first commercial transatlantic flights between London and New York."}],
+  "12-7":[{y:1787,t:"Delaware became the first state to ratify the United States Constitution."},{y:1941,t:"Japan launched a surprise attack on Pearl Harbor, drawing the United States into World War II."}],
+  "12-17":[{y:1903,t:"The Wright Brothers made the first powered airplane flight at Kitty Hawk, North Carolina."},{y:1843,t:"Charles Dickens published 'A Christmas Carol', one of the most beloved stories ever written."}],
+  "12-25":[{y:800,t:"Charlemagne was crowned Holy Roman Emperor by Pope Leo III in Rome."},{y:1776,t:"George Washington crossed the Delaware River and launched a surprise attack at Trenton."}],
+  "12-31":[{y:1879,t:"Thomas Edison publicly demonstrated his incandescent light bulb for the very first time."},{y:1999,t:"The world braced for Y2K as the millennium turned — and computers kept running smoothly."}],
+};
+const FALLBACK=[
+  {y:1969,t:"Neil Armstrong and Buzz Aldrin became the first humans to walk on the Moon."},
+  {y:1903,t:"The Wright Brothers made the first successful powered aircraft flight at Kitty Hawk."},
+  {y:1928,t:"Alexander Fleming discovered penicillin by accident in his London laboratory."},
+  {y:1969,t:"The Internet's predecessor ARPANET transmitted its first message between two computers."},
+  {y:1953,t:"Watson and Crick published their discovery of the double-helix structure of DNA."},
+];
+function getFacts(m,d){return HISTORY[`${m}-${d}`]||FALLBACK;}
+
+// ══ HOLIDAYS ════════════════════════════════════════════════════════════════
+function getEaster(y){const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m2=Math.floor((a+11*h+22*l)/451),mo=Math.floor((h+l-7*m2+114)/31),dy=((h+l-7*m2+114)%31)+1;return{m:mo,d:dy};}
+function getThanksgiving(y){const d=new Date(y,10,1);let thu=4-d.getDay();if(thu<=0)thu+=7;return{m:11,d:thu+21};}
+function getDiwali(y){const a={2024:{m:11,d:1},2025:{m:10,d:20},2026:{m:11,d:8},2027:{m:10,d:29}};return a[y]||{m:11,d:1};}
+function getHanukkah(y){const a={2024:{m:12,d:26},2025:{m:12,d:14},2026:{m:12,d:4},2027:{m:12,d:24}};return a[y]||{m:12,d:25};}
+function getHoliday(now){
+  const m=now.getMonth()+1,d=now.getDate(),y=now.getFullYear();
+  const e=getEaster(y),th=getThanksgiving(y),dw=getDiwali(y),han=getHanukkah(y);
+  const hanS=new Date(y,han.m-1,han.d),hanE=new Date(y,han.m-1,han.d+7),nowD=new Date(y,m-1,d);
+  if(nowD>=hanS&&nowD<=hanE)return'hanukkah';
+  if(m===12&&d===25)return'christmas';
+  if(m===12&&d===31)return'nye';
+  if(m===1&&d===1)return'newyear';
+  if(m===10&&d===31)return'halloween';
+  if(m===2&&d===14)return'valentines';
+  if(m===3&&d===17)return'stpatricks';
+  if(m===7&&d===4)return'july4';
+  if(m===e.m&&d===e.d)return'easter';
+  if(m===th.m&&d===th.d)return'thanksgiving';
+  if(m===dw.m&&d===dw.d)return'diwali';
+  if(m===11&&d===5)return'bonfire';
+  return null;
+}
+const HMETA={
+  christmas:{msg:"Merry Christmas! 🎄"},nye:{msg:"Happy New Year's Eve! Ring it in tonight ✨"},
+  newyear:{msg:"Happy New Year! 🎉"},halloween:{msg:"Happy Halloween! 🎃"},
+  valentines:{msg:"Happy Valentine's Day! ❤️"},stpatricks:{msg:"Happy St. Patrick's Day! ☘️"},
+  july4:{msg:"Happy 4th of July! 🇺🇸"},easter:{msg:"Happy Easter! 🐣"},
+  thanksgiving:{msg:"Happy Thanksgiving! 🦃"},diwali:{msg:"Happy Diwali! 🪔"},
+  hanukkah:{msg:"Happy Hanukkah! 🕎"},bonfire:{msg:"Bonfire Night! 🎆"},
+};
+
+// ══ APP STATE ════════════════════════════════════════════════════════════════
+let showSec=true,use12h=false,darkMode=false;
+let slots=[{id:1,tz:'Europe/London'},{id:2,tz:'Asia/Tokyo'}];
+let nextId=3; const MAX=6;
+let histIdx=0,histFacts=[];
+let confettiParticles=[];
+let hornFired=false,lastHoliday=null,holidayInitDone=false,lastMinute=-1;
+// DEV state
+const DEV={simActive:false,simDate:null,skyLocked:false,skyHour:null,holOverride:null,cfCount:400,cfSpeed:1,cfSpread:1};
+function devNow(){return DEV.simActive&&DEV.simDate?new Date(DEV.simDate):new Date();}
+function devHoliday(){return DEV.holOverride!==null?DEV.holOverride:getHoliday(devNow());}
+
+// ══ SKY ══════════════════════════════════════════════════════════════════════
+const sc=document.getElementById('sky-canvas'),sx=sc.getContext('2d');
+const PER=[{n:'deep night',s:0,e:5},{n:'dawn',s:5,e:7},{n:'morning',s:7,e:11},{n:'midday',s:11,e:14},{n:'afternoon',s:14,e:17},{n:'golden hour',s:17,e:20},{n:'dusk',s:20,e:22},{n:'night',s:22,e:24}];
+const PAL={light:{'deep night':['#040918','#0c1442','#060c28'],'dawn':['#f2a06a','#e87050','#885098','#404898'],'morning':['#55b0e5','#8ccaf2','#c2e2ff','#ffc098'],'midday':['#1295f5','#3cb5ff','#74d0ff','#acecff'],'afternoon':['#30a0d5','#58b8d8','#88d0f0','#bce6ff'],'golden hour':['#e06810','#e88830','#f0a848','#f8c070'],'dusk':['#100430','#3c1050','#902848','#c85820'],'night':['#02060e','#070e28','#0c1638']},dark:{'deep night':['#000003','#030408','#01040a'],'dawn':['#0c0500','#180706','#0e0410'],'morning':['#01040a','#030812','#050c18'],'midday':['#010204','#01050a','#020810'],'afternoon':['#01040a','#020810','#040d18'],'golden hour':['#070100','#100300','#180700'],'dusk':['#010005','#04010a','#09030e'],'night':['#000102','#010203','#010306']}};
+function gp(h){return PER.find(p=>h>=p.s&&h<p.e)||PER[7];}
+const SC=[[224,230,255],[198,212,255],[255,247,212],[255,236,196],[182,202,255],[246,246,255],[210,228,255],[238,218,198],[220,240,220]];
+let stars=[];
+function istar(){stars=Array.from({length:160},()=>{const c=SC[Math.floor(Math.random()*SC.length)],b=Math.random()>.85;return{x:Math.random(),y:Math.random()*.76,r:Math.random()*(b?1.5:.9)+.2,col:c,tw:Math.random()*Math.PI*2,spd:.011+Math.random()*.022,b};});}
+istar();
+function dsky(h,m){
+  const W=sc.width,H=sc.height;if(!W||!H)return;
+  const p=gp(typeof h==='number'?h:h),mode=darkMode?'dark':'light',cols=PAL[mode][p.n];
+  sx.clearRect(0,0,W,H);
+  const g=sx.createLinearGradient(0,0,0,H);cols.forEach((c,i)=>g.addColorStop(i/(cols.length-1),c));
+  sx.fillStyle=g;sx.fillRect(0,0,W,H);
+  const hnum=typeof h==='number'?h:h;
+  const frac=(hnum+m/60)/24,isN=hnum<6||hnum>=20,isDk=hnum>=17&&hnum<22,isDn=hnum>=4&&hnum<8;
+  if(isN||isDk||isDn){
+    const ba=isN?.96:isDk?.50:.40;
+    stars.forEach(s=>{s.tw+=s.spd;const tw=.55+.45*Math.sin(s.tw),a=ba*tw*(s.b?1:.64);const[r,g2,b2]=s.col;sx.beginPath();sx.arc(s.x*W,s.y*H,s.r,0,Math.PI*2);sx.fillStyle=`rgba(${r},${g2},${b2},${a.toFixed(2)})`;sx.fill();if(s.b&&a>.44){sx.strokeStyle=`rgba(${r},${g2},${b2},${(a*.26).toFixed(2)})`;sx.lineWidth=.5;sx.beginPath();sx.moveTo(s.x*W-5,s.y*H);sx.lineTo(s.x*W+5,s.y*H);sx.moveTo(s.x*W,s.y*H-5);sx.lineTo(s.x*W,s.y*H+5);sx.stroke();}});
+  }
+  const ang=frac*Math.PI*2-Math.PI/2;
+  if(!isN){const SX=W*(.5+Math.cos(ang)*.4),SY=H*(.5-Math.sin(ang)*.75);const big=isDk||isDn,sr=big?13:21,gr=big?82:64;const gc=big?'255,145,55':'255,236,155';const gg=sx.createRadialGradient(SX,SY,0,SX,SY,gr);gg.addColorStop(0,`rgba(${gc},.40)`);gg.addColorStop(.4,`rgba(${gc},.12)`);gg.addColorStop(1,`rgba(${gc},0)`);sx.fillStyle=gg;sx.beginPath();sx.arc(SX,SY,gr,0,Math.PI*2);sx.fill();sx.beginPath();sx.arc(SX,SY,sr,0,Math.PI*2);sx.fillStyle=big?'rgba(255,155,60,.92)':'rgba(255,251,212,.96)';sx.fill();}
+  if(isN||isDk||isDn){const ma=(frac+.5)*Math.PI*2-Math.PI/2;const MX=W*(.5+Math.cos(ma)*.35),MY=H*(.5-Math.sin(ma)*.68);if(MY<H*.9&&MY>-20){sx.beginPath();sx.arc(MX,MY,13,0,Math.PI*2);sx.fillStyle='rgba(220,234,255,.86)';sx.fill();sx.beginPath();sx.arc(MX+7,MY-3,11,0,Math.PI*2);sx.fillStyle=cols[0];sx.fill();}}
+  if(!isN){const T=Date.now();for(let i=0;i<3;i++){const cx=((W*(.08+i*.33)+(T/98000)*W*(.27+i*.18))%(W*1.2))-W*.1;dcloud(cx,H*(.11+i*.09),48+i*21,isDk||isDn?.08:.12);}}
+  if(typeof drawWxOverlay==='function')drawWxOverlay(W,H,hnum);
+}
+function dcloud(x,y,sz,a){sx.fillStyle=`rgba(255,255,255,${a})`;[[0,0,1],[-.5,.15,.72],[.55,.1,.78],[-.28,-.14,.56],[.32,-.11,.62]].forEach(([dx,dy,sc2])=>{sx.beginPath();sx.arc(x+dx*sz,y+dy*sz*.5,sz*sc2*.36,0,Math.PI*2);sx.fill();});}
+function rsz(){sc.width=window.innerWidth;sc.height=window.innerHeight;}
+
+// ══ CONFETTI ════════════════════════════════════════════════════════════════
+const cc=document.getElementById('confetti-canvas'),cx2=cc.getContext('2d');
+function rszcf(){cc.width=window.innerWidth;cc.height=window.innerHeight;}
+const CTHEMES={
+  newyear:()=>({type:'rect',color:`hsl(${Math.random()*360},90%,60%)`,w:10,h:6}),
+  nye:()=>({type:'rect',color:`hsl(${Math.random()*360},90%,60%)`,w:10,h:6}),
+  christmas:()=>({type:'star',color:['#e74c3c','#27ae60','#f1c40f','#ecf0f1'][Math.floor(Math.random()*4)],size:8}),
+  halloween:()=>({type:'pumpkin',color:['#e67e22','#2c3e50','#8e44ad'][Math.floor(Math.random()*3)],size:14}),
+  valentines:()=>({type:'heart',color:['#e74c3c','#ff69b4','#ff1493','#c0392b'][Math.floor(Math.random()*4)],size:12}),
+  stpatricks:()=>({type:'clover',color:['#27ae60','#2ecc71','#1e8449'][Math.floor(Math.random()*3)],size:14}),
+  july4:()=>({type:'star',color:['#e74c3c','#ecf0f1','#3498db'][Math.floor(Math.random()*3)],size:9}),
+  easter:()=>({type:'egg',color:`hsl(${Math.random()*360},70%,70%)`,size:12}),
+  thanksgiving:()=>({type:'leaf',color:['#e67e22','#c0392b','#f39c12'][Math.floor(Math.random()*3)],size:13}),
+  diwali:()=>({type:'star',color:['#f39c12','#e67e22','#e74c3c','#f1c40f'][Math.floor(Math.random()*4)],size:10}),
+  hanukkah:()=>({type:'star6',color:['#3498db','#ecf0f1','#f39c12'][Math.floor(Math.random()*3)],size:10}),
+  bonfire:()=>({type:'spark',color:['#e74c3c','#e67e22','#f39c12','#ecf0f1'][Math.floor(Math.random()*4)],size:8}),
+};
+function spawnConfetti(holiday,count){
+  const th=CTHEMES[holiday]||CTHEMES.newyear;
+  const n=count||DEV.cfCount;
+  for(let i=0;i<n;i++){const p=th();confettiParticles.push({x:Math.random()*cc.width,y:-20-Math.random()*180,vx:(Math.random()-.5)*3*DEV.cfSpread,vy:(2+Math.random()*3)*DEV.cfSpeed,rot:Math.random()*Math.PI*2,rotV:(Math.random()-.5)*.15,opacity:1,...p});}
+}
+function drawPart(p){
+  cx2.save();cx2.translate(p.x,p.y);cx2.rotate(p.rot);cx2.globalAlpha=p.opacity;cx2.fillStyle=p.color;
+  if(p.type==='rect'){cx2.fillRect(-p.w/2,-p.h/2,p.w,p.h);}
+  else if(p.type==='heart'){cx2.beginPath();cx2.moveTo(0,-p.size*.3);cx2.bezierCurveTo(p.size*.5,-p.size*.7,p.size*.8,0,0,p.size*.5);cx2.bezierCurveTo(-p.size*.8,0,-p.size*.5,-p.size*.7,0,-p.size*.3);cx2.fill();}
+  else if(p.type==='clover'){for(let a=0;a<4;a++){cx2.save();cx2.rotate(a*Math.PI/2);cx2.beginPath();cx2.ellipse(p.size*.3,0,p.size*.3,p.size*.25,0,0,Math.PI*2);cx2.fill();cx2.restore();}cx2.beginPath();cx2.arc(0,0,p.size*.18,0,Math.PI*2);cx2.fill();}
+  else if(p.type==='pumpkin'){[-p.size*.25,0,p.size*.25].forEach(ox=>{cx2.beginPath();cx2.ellipse(ox,0,p.size*.28,p.size*.35,0,0,Math.PI*2);cx2.fill();});}
+  else if(p.type==='star'){cx2.beginPath();for(let i=0;i<10;i++){const r=i%2===0?p.size:p.size*.4,a=i*Math.PI/5-Math.PI/2;cx2.lineTo(Math.cos(a)*r,Math.sin(a)*r);}cx2.closePath();cx2.fill();}
+  else if(p.type==='star6'){cx2.beginPath();for(let i=0;i<12;i++){const r=i%2===0?p.size:p.size*.45,a=i*Math.PI/6-Math.PI/2;cx2.lineTo(Math.cos(a)*r,Math.sin(a)*r);}cx2.closePath();cx2.fill();}
+  else if(p.type==='egg'){cx2.beginPath();cx2.ellipse(0,0,p.size*.4,p.size*.55,0,0,Math.PI*2);cx2.fill();}
+  else if(p.type==='leaf'){cx2.beginPath();cx2.moveTo(0,-p.size*.5);cx2.quadraticCurveTo(p.size*.5,0,0,p.size*.5);cx2.quadraticCurveTo(-p.size*.5,0,0,-p.size*.5);cx2.fill();}
+  else if(p.type==='spark'){cx2.fillRect(-p.size*.15,-p.size*.5,p.size*.3,p.size);}
+  cx2.restore();
+}
+function tickCF(){
+  rszcf();cx2.clearRect(0,0,cc.width,cc.height);
+  confettiParticles=confettiParticles.filter(p=>{p.x+=p.vx;p.y+=p.vy;p.rot+=p.rotV;p.vy+=.06;p.vx*=.99;p.opacity=Math.max(0,p.opacity-.008);if(p.y>cc.height+30||p.opacity<=0)return false;drawPart(p);return true;});
+  requestAnimationFrame(tickCF);
+}
+requestAnimationFrame(tickCF);
+
+// ══ HORNS ════════════════════════════════════════════════════════════════════
+function fireHorns(){
+  const hl=document.getElementById('horn-l'),hr=document.getElementById('horn-r');
+  hl.style.animation='none';hr.style.animation='none';void hl.offsetWidth;
+  hl.style.animation='horn-in 3s ease-out forwards';hr.style.animation='horn-in-r 3s ease-out forwards';
+  setTimeout(()=>{hl.style.animation='none';hr.style.animation='none';},3100);
+}
+
+// ══ HOLIDAY ART ═════════════════════════════════════════════════════════════
+const HOLIDAY_EMOJI = {
+  christmas:   {l:'🎄', r:'🎁'},
+  halloween:   {l:'🎃', r:'🦇'},
+  valentines:  {l:'❤️', r:'🌹'},
+  stpatricks:  {l:'☘️', r:'🍀'},
+  july4:       {l:'🎆', r:'🇺🇸'},
+  easter:      {l:'🐣', r:'🌸'},
+  thanksgiving:{l:'🦃', r:'🍂'},
+  diwali:      {l:'🪔', r:'✨'},
+  hanukkah:    {l:'🕎', r:'⭐'},
+  nye:         {l:'🥂', r:'🎆'},
+  newyear:     {l:'🎉', r:'🥳'},
+  bonfire:     {l:'🔥', r:'💥'},
+};
+function drawHolidayArt(holiday){
+  const art=document.getElementById('holiday-art');
+  const l=document.getElementById('ha-left');
+  const r=document.getElementById('ha-right');
+  if(holiday && HOLIDAY_EMOJI[holiday]){
+    l.textContent=HOLIDAY_EMOJI[holiday].l;
+    r.textContent=HOLIDAY_EMOJI[holiday].r;
+    art.classList.add('show');
+  } else {
+    l.textContent=''; r.textContent='';
+    art.classList.remove('show');
+  }
+}
+
+// ══ D3 MAP ═══════════════════════════════════════════════════════════════════
+const MW=960,MH=500;
+const proj=d3.geoNaturalEarth1().scale(153).translate([MW/2,MH/2]);
+const gpath=d3.geoPath().projection(proj);
+fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json')
+  .then(r=>r.json()).then(w=>{
+    const land=topojson.feature(w,w.objects.countries),borders=topojson.mesh(w,w.objects.countries,(a,b)=>a!==b),grat=d3.geoGraticule()();
+    d3.select('#grat-g').append('path').datum(grat).attr('d',gpath).attr('stroke','rgba(255,255,255,0.055)').attr('fill','none').attr('stroke-width',.5);
+    d3.select('#land-g').append('path').datum(land).attr('d',gpath).attr('id','lp').attr('fill',darkMode?'#2a4062':'#7aaccb').attr('stroke',darkMode?'#1a3255':'#5892b2').attr('stroke-width',.35);
+    d3.select('#land-g').append('path').datum(borders).attr('d',gpath).attr('id','bp').attr('fill','none').attr('stroke','rgba(255,255,255,0.22)').attr('stroke-width',.3);
+    bldCities();
+  }).catch(bldCities);
+
+function bldCities(){
+  const layer=d3.select('#city-g');
+  TZ_DATA.forEach(c=>{
+    const pt=proj([c.lon,c.lat]);if(!pt||pt[0]<0||pt[0]>MW||pt[1]<0||pt[1]>MH)return;
+    const g=layer.append('g').attr('transform',`translate(${pt[0]},${pt[1]})`).style('cursor','pointer').on('mouseenter',ev=>showTT(ev,c)).on('mouseleave',hideTT).on('click',()=>{addSlot(c.tz);hideTT();});
+    g.append('circle').attr('r',4.5).attr('fill','rgba(255,255,255,0.75)').attr('stroke','rgba(0,0,0,0.18)').attr('stroke-width',.5);
+    g.append('circle').attr('r',2.2).attr('fill','rgba(38,108,215,0.90)');
+    g.append('text').attr('class','city-lbl').attr('x',0).attr('y',-8).attr('text-anchor','middle').attr('font-size','6.5').attr('font-family',"'Inter',sans-serif").attr('font-weight','500').attr('fill','rgba(255,255,255,0.92)').attr('paint-order','stroke').attr('stroke','rgba(0,0,0,0.55)').attr('stroke-width','2.2').text(c.city);
+  });
+}
+function updMap(){d3.select('#lp').attr('fill',darkMode?'#2a4062':'#7aaccb').attr('stroke',darkMode?'#1a3255':'#5892b2');d3.select('#ocean').attr('fill',darkMode?'#1a2842':'#6da8c8');}
+const mtt=document.getElementById('mtt');
+function showTT(ev,c){mtt.querySelector('.tc').textContent=`${c.city} — ${c.label}`;mtt.querySelector('.tt').textContent=gtime(c.tz);mtt.querySelector('.tu').textContent=futc(c.utc);mtt.classList.add('show');const wr=document.getElementById('map-wrap').getBoundingClientRect();let lx=ev.clientX-wr.left+10,ly=ev.clientY-wr.top-66;if(lx>wr.width-185)lx=ev.clientX-wr.left-185;if(ly<4)ly=4;mtt.style.left=lx+'px';mtt.style.top=ly+'px';}
+function hideTT(){mtt.classList.remove('show');}
+
+// ══ UTILS ════════════════════════════════════════════════════════════════════
+function futc(o){if(o==null)return'UTC';const s=o>=0?'+':'−',a=Math.abs(o),h=Math.floor(a),m=Math.round((a-h)*60);return m?`UTC${s}${h}:${String(m).padStart(2,'0')}`:`UTC${s}${h}`;}
+function gutco(tz){const e=TZ_DATA.find(t=>t.tz===tz);if(e)return e.utc;try{const n=new Date(),a=new Date(n.toLocaleString('en-US',{timeZone:'UTC'})),b=new Date(n.toLocaleString('en-US',{timeZone:tz}));return(b-a)/3600000;}catch{return 0;}}
+function gtime(tz){try{return new Date().toLocaleTimeString('en-US',{timeZone:tz,hour:'2-digit',minute:'2-digit',hour12:use12h}).replace(/\s?(AM|PM)$/i,'').trim();}catch{return'--:--';}}
+function gparts(tz){try{const n=new Date();const hhmm=n.toLocaleTimeString('en-US',{timeZone:tz,hour:'2-digit',minute:'2-digit',hour12:use12h}).replace(/\s?(AM|PM)$/i,'').trim();const ss=String(n.toLocaleTimeString('en-US',{timeZone:tz,second:'2-digit',hour12:false}).replace(/[^0-9]/g,'')).padStart(2,'0').slice(-2);const ap=use12h?n.toLocaleTimeString('en-US',{timeZone:tz,hour12:true}).slice(-2):'';return{hhmm,ss,ap};}catch{return{hhmm:'--:--',ss:'--',ap:''};}}
+function gdiff(tz){try{const my=new Date().toLocaleDateString('en-US',{timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone,day:'numeric'});const tz2=new Date().toLocaleDateString('en-US',{timeZone:tz,day:'numeric'});const d=parseInt(tz2)-parseInt(my);if([1,-30,-29,-28,-27,-26].includes(d))return'+1 day';if([-1,30,29,28,27,26].includes(d))return'−1 day';return'';}catch{return'';}}
+function bopts(cur){return TZ_DATA.map(t=>`<option value="${t.tz}"${t.tz===cur?' selected':''}>${t.city} — ${t.label} (${futc(t.utc)})</option>`).join('');}
+
+// ══ TZ SLOTS ═════════════════════════════════════════════════════════════════
+function rslots(){
+  const g=document.getElementById('tz-grid');
+  g.style.gridTemplateColumns=`repeat(${Math.min(slots.length,2)},1fr)`;
+  g.innerHTML=slots.map(s=>`<div class="tz-card" id="sl-${s.id}"><div class="tzc-head"><div class="tzc-sw"><label>timezone</label><select class="tzc-sel" data-id="${s.id}">${bopts(s.tz)}</select><span class="tzc-arr">▾</span></div><button class="tzc-rm" data-id="${s.id}">×</button></div><div class="tzc-trow"><span class="tzc-time" id="zt-${s.id}">--:--</span><span class="tzc-ampm" id="za-${s.id}" style="display:none"></span><span class="tzc-sec" id="zs-${s.id}"></span></div><div class="tzc-foot"><span class="tzc-utc" id="zu-${s.id}">${futc(gutco(s.tz))}</span><span class="tzc-diff" id="zd-${s.id}"></span></div></div>`).join('');
+  document.querySelectorAll('.tzc-sel').forEach(el=>el.addEventListener('change',e=>{const sl=slots.find(s=>s.id===+e.target.dataset.id);if(sl){sl.tz=e.target.value;rslot(sl.id);}}));
+  document.querySelectorAll('.tzc-rm').forEach(el=>el.addEventListener('click',e=>{slots=slots.filter(s=>s.id!==+e.target.dataset.id);rslots();uadd();}));
+  slots.forEach(s=>rslot(s.id));
+}
+function rslot(id){
+  const sl=slots.find(s=>s.id===id);if(!sl)return;
+  const{hhmm,ss,ap}=gparts(sl.tz);
+  const zt=document.getElementById(`zt-${id}`),za=document.getElementById(`za-${id}`),zs=document.getElementById(`zs-${id}`),zu=document.getElementById(`zu-${id}`),zd=document.getElementById(`zd-${id}`);
+  if(zt)zt.textContent=hhmm;
+  if(za){za.textContent=ap;za.style.display=use12h?'inline':'none';}
+  if(zs){zs.textContent=showSec?`:${ss}`:'';zs.style.opacity=showSec?'1':'0';}
+  if(zu)zu.textContent=futc(gutco(sl.tz));
+  if(zd)zd.textContent=gdiff(sl.tz);
+}
+function addSlot(tz){
+  if(slots.length>=MAX)return;
+  if(slots.find(s=>s.tz===tz)){const el=document.getElementById(`sl-${slots.find(s=>s.tz===tz).id}`);if(el){el.style.outline='2px solid rgba(60,140,255,.5)';setTimeout(()=>el.style.outline='',900);}return;}
+  slots.push({id:nextId++,tz});rslots();uadd();
+}
+function uadd(){const b=document.getElementById('add-btn');b.disabled=slots.length>=MAX;b.textContent=slots.length>=MAX?`max ${MAX} reached`:'+ add timezone';}
+document.getElementById('add-btn').addEventListener('click',()=>{if(slots.length>=MAX)return;const u=TZ_DATA.find(t=>!slots.find(s=>s.tz===t.tz));addSlot(u?u.tz:'America/New_York');});
+
+// ══ HISTORY ══════════════════════════════════════════════════════════════════
+function loadHistory(d){const nd=d||devNow();histFacts=getFacts(nd.getMonth()+1,nd.getDate());histIdx=0;renderHistory(false);}
+function renderHistory(anim){
+  if(!histFacts.length)return;
+  const f=histFacts[histIdx];
+  document.getElementById('hist-year').textContent=`${f.y} · this day in history`;
+  const tx=document.getElementById('hist-text');
+  if(anim){tx.classList.add('fade');setTimeout(()=>{tx.textContent=f.t;tx.classList.remove('fade');},340);}
+  else tx.textContent=f.t;
+  document.getElementById('hist-dots').innerHTML=histFacts.map((_,i)=>`<span class="hdot${i===histIdx?' on':''}"></span>`).join('');
+  const icons=['📜','🏛️','⚔️','🌍','🚀','🎭','🔬','📡','🗺️','💡'];
+  document.getElementById('hist-icon').textContent=icons[histIdx%icons.length];
+}
+document.getElementById('hprev').addEventListener('click',()=>{histIdx=(histIdx-1+histFacts.length)%histFacts.length;renderHistory(true);});
+document.getElementById('hnext').addEventListener('click',()=>{histIdx=(histIdx+1)%histFacts.length;renderHistory(true);});
+document.getElementById('hist-bar').addEventListener('click',e=>{if(!e.target.closest('.hnb')){histIdx=(histIdx+1)%histFacts.length;renderHistory(true);}});
+setInterval(()=>{histIdx=(histIdx+1)%histFacts.length;renderHistory(true);},30000);
+
+// ══ HOLIDAY UI ═══════════════════════════════════════════════════════════════
+function updateHolidayUI(holiday){
+  const msgEl=document.getElementById('holiday-msg');
+  if(holiday&&HMETA[holiday]){msgEl.textContent=HMETA[holiday].msg;msgEl.classList.add('show');}
+  else{msgEl.classList.remove('show');msgEl.textContent='';}
+  setTimeout(()=>drawHolidayArt(holiday),50);
+}
+
+// ══ MAIN TICK ════════════════════════════════════════════════════════════════
+const DNAMES=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const MNAMES=['January','February','March','April','May','June','July','August','September','October','November','December'];
+function tick(){
+  const now=devNow();
+  const h=now.getHours(),m=now.getMinutes(),s=now.getSeconds();
+  const hhmm=now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:use12h}).replace(/\s?(AM|PM)$/i,'').trim();
+  const ss=String(s).padStart(2,'0');
+  const ap=use12h?now.toLocaleTimeString('en-US',{hour12:true}).slice(-2):'';
+  document.getElementById('time-hhmm').textContent=hhmm;
+  const sw=document.getElementById('sec-wrap');
+  if(showSec){
+    sw.textContent=`:${ss}`;
+    sw.style.opacity='1';
+    sw.classList.remove('tick');
+    void sw.offsetWidth; // force reflow to restart animation
+    sw.classList.add('tick');
+  } else {
+    sw.textContent='';
+    sw.style.opacity='0';
+  }
+  const ae=document.getElementById('time-ampm');ae.style.display=use12h?'inline':'none';ae.textContent=ap;
+  document.getElementById('date-line').textContent=`${DNAMES[now.getDay()]}, ${MNAMES[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
+  const skyH=DEV.skyLocked?DEV.skyHour:h;
+  document.getElementById('period-lbl').textContent=gp(skyH).n;
+  // Holiday
+  const holiday=devHoliday();
+  if(!holidayInitDone){holidayInitDone=true;lastHoliday=holiday;updateHolidayUI(holiday);if(holiday&&holiday!=='nye')spawnConfetti(holiday,DEV.cfCount);}
+  else if(holiday!==lastHoliday){lastHoliday=holiday;updateHolidayUI(holiday);if(holiday&&holiday!=='nye')spawnConfetti(holiday,DEV.cfCount);}
+  // NY countdown
+  if(holiday==='nye'||holiday==='newyear'){
+    const secToMN=(23-h)*3600+(59-m)*60+(60-s);
+    const cdEl=document.getElementById('ny-countdown');
+    if(h===23&&m>=50){cdEl.classList.add('show');if(secToMN<=10&&secToMN>0)cdEl.textContent=`🎆 ${secToMN} …`;else{const mm2=String(Math.floor(secToMN/60)).padStart(2,'0'),ss2=String(secToMN%60).padStart(2,'0');cdEl.textContent=`midnight in ${mm2}:${ss2}`;}}
+    else if(h===0&&m===0&&s<5){cdEl.classList.add('show');cdEl.textContent='🎉 Happy New Year! 🎉';}
+    else{cdEl.classList.remove('show');cdEl.textContent='';}
+    if(h===0&&m===0&&s===0&&!hornFired){hornFired=true;fireHorns();spawnConfetti('newyear',300);}
+    if(h===0&&m===0&&s>5)hornFired=false;
+    if(h===23&&m===59&&s===55&&!hornFired)spawnConfetti('nye',80);
+  } else document.getElementById('ny-countdown').classList.remove('show');
+  if(m!==lastMinute){lastMinute=m;updateHolidayUI(holiday);}
+  rsz();dsky(skyH,m);
+  slots.forEach(sl=>rslot(sl.id));
+}
+
+// ══ CONTROLS ═════════════════════════════════════════════════════════════════
+document.getElementById('btn-sec').addEventListener('click',function(){showSec=!showSec;this.textContent=showSec?'sec':'sec off';this.classList.toggle('on',showSec);});
+document.getElementById('btn-12h').addEventListener('click',function(){use12h=!use12h;this.textContent=use12h?'24h':'12h';this.classList.toggle('on',use12h);rslots();});
+document.getElementById('btn-dark').addEventListener('click',function(){darkMode=!darkMode;document.body.classList.toggle('dark',darkMode);this.textContent=darkMode?'light':'dark mode';this.classList.toggle('on',darkMode);updMap();});
+window.addEventListener('resize',()=>{rsz();rszcf();});
+
+// ══ DEV PANEL ════════════════════════════════════════════════════════════════
+const KONAMI=['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a'];
+let ki=0;
+document.addEventListener('keydown',e=>{if(e.key===KONAMI[ki]){ki++;if(ki===KONAMI.length){ki=0;document.getElementById('dev-panel').classList.toggle('open');syncDev();}}else{ki=e.key===KONAMI[0]?1:0;}});
+document.getElementById('dev-close').addEventListener('click',()=>document.getElementById('dev-panel').classList.remove('open'));
+
+// Drag
+(()=>{const p=document.getElementById('dev-panel'),dr=document.getElementById('dev-drag');let ox=0,oy=0,drag=false;
+  dr.addEventListener('mousedown',e=>{drag=true;ox=e.clientX-p.offsetLeft;oy=e.clientY-p.offsetTop;e.preventDefault();});
+  document.addEventListener('mousemove',e=>{if(!drag)return;let nx=Math.max(0,Math.min(window.innerWidth-p.offsetWidth,e.clientX-ox)),ny=Math.max(0,Math.min(window.innerHeight-p.offsetHeight,e.clientY-oy));p.style.left=nx+'px';p.style.top=ny+'px';p.style.right='auto';});
+  document.addEventListener('mouseup',()=>drag=false);
+  dr.addEventListener('touchstart',e=>{const t=e.touches[0];ox=t.clientX-p.offsetLeft;oy=t.clientY-p.offsetTop;drag=true;e.preventDefault();},{passive:false});
+  document.addEventListener('touchmove',e=>{if(!drag)return;const t=e.touches[0];let nx=Math.max(0,Math.min(window.innerWidth-p.offsetWidth,t.clientX-ox)),ny=Math.max(0,Math.min(window.innerHeight-p.offsetHeight,t.clientY-oy));p.style.left=nx+'px';p.style.top=ny+'px';p.style.right='auto';e.preventDefault();},{passive:false});
+  document.addEventListener('touchend',()=>drag=false);
+})();
+
+function syncDev(){
+  const now=new Date(),pad=n=>String(n).padStart(2,'0');
+  document.getElementById('dev-date').value=`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+  document.getElementById('dev-time').value=`${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  document.getElementById('dev-hscrub').value=now.getHours();
+  document.getElementById('dev-hval').textContent=`${pad(now.getHours())}:00`;
+  document.getElementById('dev-sky').value=now.getHours();
+  document.getElementById('dev-skyval').textContent=`${pad(now.getHours())}:00`;
+  document.getElementById('dev-skyperiod').textContent=gp(now.getHours()).n;
+  buildCFBtns();
+}
+
+// Time sim
+document.getElementById('dev-hscrub').addEventListener('input',function(){const h=parseInt(this.value);document.getElementById('dev-hval').textContent=`${String(h).padStart(2,'0')}:00`;document.getElementById('dev-time').value=`${String(h).padStart(2,'0')}:00`;});
+document.getElementById('dev-apply').addEventListener('click',()=>{const dv=document.getElementById('dev-date').value,tv=document.getElementById('dev-time').value;if(!dv||!tv)return;DEV.simDate=new Date(`${dv}T${tv}:00`);DEV.simActive=true;document.getElementById('dev-sim-on').classList.add('on');loadHistory(DEV.simDate);lastHoliday='__reset__';updateHolidayUI(devHoliday());});
+document.getElementById('dev-reset').addEventListener('click',()=>{DEV.simActive=false;DEV.simDate=null;document.getElementById('dev-sim-on').classList.remove('on');loadHistory();lastHoliday='__reset__';updateHolidayUI(devHoliday());});
+// Sky scrub
+document.getElementById('dev-sky').addEventListener('input',function(){const h=parseFloat(this.value),hh=Math.floor(h),mm=Math.round((h-hh)*60);document.getElementById('dev-skyval').textContent=`${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;document.getElementById('dev-skyperiod').textContent=gp(h).n;DEV.skyLocked=true;DEV.skyHour=h;rsz();dsky(h,mm);});
+document.getElementById('dev-skyunlock').addEventListener('click',()=>{DEV.skyLocked=false;DEV.skyHour=null;});
+// Holiday override
+document.getElementById('dev-holsel').addEventListener('change',function(){DEV.holOverride=this.value===''?null:this.value;lastHoliday='__reset__';updateHolidayUI(devHoliday());});
+// Confetti buttons
+function buildCFBtns(){
+  const c=document.getElementById('dev-cfbtns');
+  c.innerHTML=Object.keys(HMETA).map(h=>`<button class="dbtn" data-h="${h}" style="font-size:10px;padding:0 8px;height:24px">${HMETA[h].msg.split(' ')[0]}</button>`).join('');
+  c.querySelectorAll('.dbtn[data-h]').forEach(b=>b.addEventListener('click',()=>{confettiParticles=[];spawnConfetti(b.dataset.h,DEV.cfCount);}));
+}
+// Confetti sliders
+document.getElementById('dev-cfcount').addEventListener('input',function(){DEV.cfCount=parseInt(this.value);document.getElementById('dev-cfcval').textContent=DEV.cfCount;});
+document.getElementById('dev-cfspeed').addEventListener('input',function(){DEV.cfSpeed=parseFloat(this.value);document.getElementById('dev-cfsval').textContent=DEV.cfSpeed.toFixed(1)+'×';});
+document.getElementById('dev-cfspread').addEventListener('input',function(){DEV.cfSpread=parseFloat(this.value);document.getElementById('dev-cfspval').textContent=DEV.cfSpread.toFixed(1)+'×';});
+document.getElementById('dev-cfclear').addEventListener('click',()=>confettiParticles=[]);
+// Map toggles
+document.getElementById('dev-grid').addEventListener('change',function(){document.getElementById('grat-g').style.display=this.checked?'':'none';});
+document.getElementById('dev-cities').addEventListener('change',function(){document.querySelectorAll('.city-lbl').forEach(t=>t.style.display=this.checked?'':'none');});
+// History toggle
+document.getElementById('dev-histshow').addEventListener('change',function(){document.getElementById('hist-bar').style.display=this.checked?'':'none';});
+
+
+// ══ WEATHER ══════════════════════════════════════════════════════════════════
+const WX = {
+  data: null, locName: '', lat: null, lon: null,
+  fetchTimer: null, snowFlakes: [], rainDrops: [],
+  lightTimer: null, active: false
+};
+const WX_CANVAS = document.getElementById('wx-canvas');
+const WX_CTX = WX_CANVAS.getContext('2d');
+const SNOW_CANVAS = document.getElementById('snow-canvas');
+const SNOW_CTX = SNOW_CANVAS.getContext('2d');
+
+const WX_ICONS = {
+  clear:'☀️', sunny:'☀️', 'clear sky':'☀️',
+  clouds:'⛅', cloudy:'☁️', overcast:'☁️', 'partly cloudy':'⛅', 'scattered clouds':'⛅', 'broken clouds':'☁️', 'overcast clouds':'☁️', 'few clouds':'🌤️',
+  rain:'🌧️', drizzle:'🌦️', 'light rain':'🌦️', 'moderate rain':'🌧️', 'heavy rain':'🌧️',
+  thunderstorm:'⛈️', storm:'⛈️',
+  snow:'❄️', blizzard:'❄️', sleet:'🌨️',
+  fog:'🌫️', mist:'🌫️', haze:'🌫️',
+  wind:'💨',
+};
+function wxIcon(desc){
+  const d=(desc||'').toLowerCase();
+  for(const[k,v] of Object.entries(WX_ICONS)){if(d.includes(k))return v;}
+  return '🌡️';
+}
+
+// Open-Meteo — free, no API key, uses lat/lon
+async function fetchWeatherCoords(lat,lon,name){
+  try{
+    const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weathercode,windspeed_10m&daily=sunrise,sunset&timezone=auto&forecast_days=1`;
+    const r=await fetch(url);const d=await r.json();
+    WX.data=d; WX.lat=lat; WX.lon=lon; WX.locName=name||'';
+    applyWeather(d);
+  }catch(e){showWxError();}
+}
+
+// WMO weather code → description
+function wmoDesc(code){
+  const WMO={0:'clear sky',1:'mainly clear',2:'partly cloudy',3:'overcast',45:'fog',48:'fog',51:'light drizzle',53:'drizzle',55:'heavy drizzle',61:'light rain',63:'moderate rain',65:'heavy rain',71:'light snow',73:'snow',75:'heavy snow',77:'snow grains',80:'light rain',81:'moderate rain',82:'heavy rain',85:'snow showers',86:'heavy snow',95:'thunderstorm',96:'thunderstorm',99:'thunderstorm'};
+  return WMO[code]||'clear sky';
+}
+
+function applyWeather(d){
+  if(!d||!d.current)return;
+  const code=d.current.weathercode;
+  rawTempC = d.current.temperature_2m; // always celsius from open-meteo
+  const desc=wmoDesc(code);
+  const icon=wxIcon(desc);
+
+  renderTemp();
+  document.getElementById('wx-cond').textContent=` · ${desc}`;
+  document.querySelector('#weather-line .wicon').textContent=icon;
+  document.getElementById('weather-loc').textContent=WX.locName?`📍 ${WX.locName}`:'';
+
+  // Sunrise/sunset
+  if(d.daily?.sunrise?.[0]&&d.daily?.sunset?.[0]){
+    const sr=new Date(d.daily.sunrise[0]),ss=new Date(d.daily.sunset[0]);
+    const fmt=t=>t.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:use12h}).replace(/\s?(AM|PM)$/i,'').trim();
+    const ap=t=>use12h?t.toLocaleTimeString('en-US',{hour12:true}).slice(-2):'';
+    document.getElementById('sunrise-line').textContent=`🌅 ${fmt(sr)}${ap(sr)?` ${ap(sr)}`:''} · 🌇 ${fmt(ss)}${ap(ss)?` ${ap(ss)}`:''}`;
+  }
+
+  WX.active=true;
+  applyWxToSky(code);
+  applyWxParticles(code);
+}
+
+function applyWxToSky(code){
+  // Modulate PAL for weather — inject overrides
+  const isStorm=code>=95;const isRain=code>=51&&code<70;const isSnow=code>=71&&code<80;const isFog=code===45||code===48;const isCloudy=code>=2&&code<45;const isClear=code<=1;
+  // We set a sky modifier the dsky function reads
+  WX.skyMod={isStorm,isRain,isSnow,isFog,isCloudy,isClear};
+  // Fog overlay
+  document.getElementById('fog-overlay').classList.toggle('show',isFog);
+}
+
+function applyWxParticles(code){
+  const isRain=(code>=51&&code<70)||(code>=80&&code<83);const isHeavyRain=code>=63||code>=81;
+  const isSnow=code>=71&&code<80||code===85||code===86;const isStorm=code>=95;
+  // Rain
+  const wxC=document.getElementById('wx-canvas');const snowC=document.getElementById('snow-canvas');
+  wxC.classList.toggle('show',isRain||isStorm);snowC.classList.toggle('show',isSnow);
+  if(isRain||isStorm){initRain(isHeavyRain||isStorm?320:140);}
+  if(isSnow){initSnow(80);}
+  if(isStorm){startLightning();}else{stopLightning();}
+}
+
+function initRain(count){
+  WX_CANVAS.width=window.innerWidth;WX_CANVAS.height=window.innerHeight;
+  WX.rainDrops=Array.from({length:count},()=>({x:Math.random()*WX_CANVAS.width,y:Math.random()*WX_CANVAS.height,len:Math.random()*14+8,spd:Math.random()*6+10,op:Math.random()*.45+.15}));
+}
+function initSnow(count){
+  SNOW_CANVAS.width=window.innerWidth;SNOW_CANVAS.height=window.innerHeight;
+  WX.snowFlakes=Array.from({length:count},()=>({x:Math.random()*SNOW_CANVAS.width,y:Math.random()*SNOW_CANVAS.height,r:Math.random()*2.5+.8,spd:Math.random()*1.2+.4,drift:Math.random()*1.2-.6,op:Math.random()*.6+.25}));
+}
+
+function tickWx(){
+  const mod=WX.skyMod||{};
+  // Rain
+  if(mod.isRain||mod.isStorm){
+    WX_CANVAS.width=window.innerWidth;WX_CANVAS.height=window.innerHeight;
+    WX_CTX.clearRect(0,0,WX_CANVAS.width,WX_CANVAS.height);
+    WX_CTX.strokeStyle='rgba(180,210,240,0.35)';WX_CTX.lineWidth=.8;
+    WX.rainDrops.forEach(d=>{
+      d.y+=d.spd;d.x+=d.spd*.15;
+      if(d.y>WX_CANVAS.height){d.y=-10;d.x=Math.random()*WX_CANVAS.width;}
+      WX_CTX.globalAlpha=d.op;WX_CTX.beginPath();WX_CTX.moveTo(d.x,d.y);WX_CTX.lineTo(d.x+d.spd*.1,d.y+d.len);WX_CTX.stroke();
+    });
+    WX_CTX.globalAlpha=1;
+  }
+  // Snow
+  if(mod.isSnow){
+    SNOW_CANVAS.width=window.innerWidth;SNOW_CANVAS.height=window.innerHeight;
+    SNOW_CTX.clearRect(0,0,SNOW_CANVAS.width,SNOW_CANVAS.height);
+    WX.snowFlakes.forEach(f=>{
+      f.y+=f.spd;f.x+=f.drift;
+      if(f.y>SNOW_CANVAS.height){f.y=-5;f.x=Math.random()*SNOW_CANVAS.width;}
+      SNOW_CTX.globalAlpha=f.op;SNOW_CTX.fillStyle='rgba(240,248,255,.9)';
+      SNOW_CTX.beginPath();SNOW_CTX.arc(f.x,f.y,f.r,0,Math.PI*2);SNOW_CTX.fill();
+    });
+    SNOW_CTX.globalAlpha=1;
+  }
+  requestAnimationFrame(tickWx);
+}
+requestAnimationFrame(tickWx);
+
+function startLightning(){
+  if(WX.lightTimer)return;
+  function flash(){
+    const el=document.getElementById('lightning');
+    el.classList.add('flash');setTimeout(()=>{el.classList.remove('flash');},80);
+    // Double flash sometimes
+    if(Math.random()>.6)setTimeout(()=>{el.classList.add('flash');setTimeout(()=>el.classList.remove('flash'),60);},140);
+    WX.lightTimer=setTimeout(flash,8000+Math.random()*20000);
+  }
+  WX.lightTimer=setTimeout(flash,2000+Math.random()*8000);
+}
+function stopLightning(){if(WX.lightTimer){clearTimeout(WX.lightTimer);WX.lightTimer=null;}}
+
+// Temperature unit cycling: C → F → K → C
+let tempUnit = 'F'; // default to F (US)
+// Auto-detect region: if timezone suggests US/Liberia/Myanmar → F, else C
+try {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  tempUnit = (tz.startsWith('America/') || tz === 'Pacific/Honolulu' || tz === 'America/Anchorage') ? 'F' : 'C';
+} catch(e) { tempUnit = 'F'; }
+
+let rawTempC = null; // always store celsius from API
+
+function convertTemp(c, unit) {
+  if (unit === 'F') return { val: Math.round(c * 9/5 + 32), sym: '°F' };
+  if (unit === 'K') return { val: Math.round(c + 273.15), sym: ' K' };
+  return { val: Math.round(c), sym: '°C' };
+}
+function cycleUnit() {
+  tempUnit = tempUnit === 'C' ? 'F' : tempUnit === 'F' ? 'K' : 'C';
+  if (rawTempC !== null) renderTemp();
+}
+function renderTemp() {
+  if (rawTempC === null) return;
+  const { val, sym } = convertTemp(rawTempC, tempUnit);
+  document.getElementById('wx-temp').textContent = val;
+  document.getElementById('wx-unit').textContent = sym;
+}
+function showWxError(){document.getElementById('wx-cond').textContent=' · weather unavailable';}
+document.getElementById('wx-unit').addEventListener('click', cycleUnit);
+
+// Sky mod overlay — called inside dsky after main render
+function drawWxOverlay(W,H,h){
+  const mod=WX.skyMod;if(!mod)return;
+  if(mod.isStorm){
+    // Very dark overlay
+    sx.fillStyle='rgba(8,10,20,0.38)';sx.fillRect(0,0,W,H);
+    // Heavy storm clouds
+    for(let i=0;i<6;i++){const cx=W*(.05+i*.17),cy=H*(.05+i*.04);dcloud(cx,cy,80+i*15,.28,'#050810');}
+  } else if(mod.isRain){
+    sx.fillStyle='rgba(30,40,55,0.18)';sx.fillRect(0,0,W,H);
+    for(let i=0;i<5;i++){const cx=W*(.08+i*.2),cy=H*(.06+i*.03);dcloud(cx,cy,70+i*12,.22,'#181e28');}
+  } else if(mod.isCloudy){
+    const T=Date.now();
+    for(let i=0;i<5;i++){const cx=((W*(.05+i*.22)+(T/80000)*W*(.2+i*.1))%(W*1.1))-W*.05;dcloud(cx,H*(.08+i*.07),60+i*18,.18,'#88a0c0');}
+  } else if(mod.isSnow){
+    sx.fillStyle='rgba(200,215,230,0.12)';sx.fillRect(0,0,W,H);
+  }
+  // Clear night — extra stars already handled by star multiplier below
+}
+
+// drawWxOverlay is called at the end of dsky directly (see dsky function)
+
+// ── Location & UI ────────────────────────────────────────────────────────────
+function geoLocate(){
+  if(!navigator.geolocation)return fallbackWeather();
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    const{latitude:lat,longitude:lon}=pos.coords;
+    // Reverse geocode with open-meteo won't give city — use nominatim
+    try{
+      const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
+      const d=await r.json();
+      const name=d.address?.city||d.address?.town||d.address?.village||d.address?.county||'your location';
+      fetchWeatherCoords(lat,lon,name);
+    }catch{fetchWeatherCoords(lat,lon,'your location');}
+  },()=>fallbackWeather());
+}
+function fallbackWeather(){
+  // Try IP-based geolocation first instead of defaulting to London
+  fetch('https://ipapi.co/json/')
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.latitude&&d.longitude){
+        fetchWeatherCoords(d.latitude,d.longitude,d.city||d.region||'your location');
+      } else {
+        fetchWeatherCoords(29.76,-95.37,'Houston'); // better fallback
+      }
+    })
+    .catch(()=>fetchWeatherCoords(29.76,-95.37,'Houston'));
+}
+function fetchByCity(city){
+  // Use Open-Meteo geocoding
+  fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1`)
+    .then(r=>r.json()).then(d=>{
+      if(!d.results?.[0])return showWxError();
+      const{latitude:lat,longitude:lon,name}=d.results[0];
+      fetchWeatherCoords(lat,lon,name);
+    }).catch(showWxError);
+}
+
+document.getElementById('btn-wx').addEventListener('click',()=>{
+  const wrap=document.getElementById('wx-input-wrap');
+  wrap.classList.toggle('open');
+  if(wrap.classList.contains('open'))document.getElementById('wx-city-input').focus();
+});
+document.getElementById('wx-city-btn').addEventListener('click',()=>{
+  const v=document.getElementById('wx-city-input').value.trim();
+  if(v){fetchByCity(v);document.getElementById('wx-input-wrap').classList.remove('open');}
+});
+document.getElementById('wx-city-input').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){const v=e.target.value.trim();if(v){fetchByCity(v);document.getElementById('wx-input-wrap').classList.remove('open');}}
+});
+
+// Refresh weather every 15 min
+setInterval(()=>{if(WX.lat!==null)fetchWeatherCoords(WX.lat,WX.lon,WX.locName);},15*60*1000);
+
+// ══ FULLSCREEN ════════════════════════════════════════════════════════════════
+document.getElementById('btn-fs').addEventListener('click',function(){
+  const fs=document.body.classList.toggle('fullscreen');
+  this.textContent=fs?'✕ exit':'⛶ fullscreen';
+  this.classList.toggle('on',fs);
+  if(fs&&document.documentElement.requestFullscreen)document.documentElement.requestFullscreen().catch(()=>{});
+  else if(!fs&&document.exitFullscreen&&document.fullscreenElement)document.exitFullscreen().catch(()=>{});
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.body.classList.contains('fullscreen')){document.body.classList.remove('fullscreen');document.getElementById('btn-fs').textContent='⛶ fullscreen';document.getElementById('btn-fs').classList.remove('on');}});
+document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&document.body.classList.contains('fullscreen')){document.body.classList.remove('fullscreen');document.getElementById('btn-fs').textContent='⛶ fullscreen';document.getElementById('btn-fs').classList.remove('on');}});
+
+// ══ INIT ═════════════════════════════════════════════════════════════════════
+rslots();uadd();loadHistory();rszcf();tick();setInterval(tick,1000);geoLocate();
+</script>
+</body>
+</html>
